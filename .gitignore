@@ -1,0 +1,3 @@
+*.class
+# Salidas del programa (pesan ~111 MB cada una, se generan al ejecutar)
+bordes_*.png

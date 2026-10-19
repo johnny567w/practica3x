@@ -1,0 +1,68 @@
+<meta charset="utf-8">
+<title>Sobel en paralelo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root { --bg: #ffffff; --fg: #1a1a1a; --muted: #666666; --line: #dddddd; --code: #f2f2f2; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #161616; --fg: #e8e8e8; --muted: #a0a0a0; --line: #333333; --code: #222222; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #161616; --fg: #e8e8e8; --muted: #a0a0a0; --line: #333333; --code: #222222; color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; line-height: 1.6; }
+main { max-width: 46rem; margin: 0 auto; padding-block: 2rem 4rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 0.25rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.4rem; }
+.sub { color: var(--muted); margin: 0; }
+code, pre { font-family: Consolas, "Courier New", monospace; font-size: 0.9rem; }
+pre { background: var(--code); padding: 0.75rem 1rem; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 0.35rem 0.6rem; text-align: right; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+.scroll { overflow-x: auto; }
+</style>
+
+<main>
+<h1>Detección de bordes Sobel con hilos en Java</h1>
+<p class="sub">Cálculo Paralelo · Práctica 3</p>
+
+<h2>1. Descomposición</h2>
+<p>Se divide la imagen, no el algoritmo. La imagen (<code>Muttbach.jpg</code>, 14306 × 8382 píxeles) se corta en <b>franjas horizontales</b> del mismo alto, tantas como hilos haya. Con 16 hilos: 8382 / 16 ≈ <b>524 filas</b> por franja.</p>
+<p>Las franjas se pueden procesar a la vez porque cada píxel de salida depende solo de sus 8 vecinos en la imagen en grises. En el borde de una franja basta leer una fila de la vecina, sin modificarla.</p>
+<pre>int bloque = (h + n - 1) / n;                         // 524 filas por franja
+int y0 = k * bloque, y1 = Math.min(h, y0 + bloque);   // filas de la franja k</pre>
+
+<h2>2. Asignación</h2>
+<p>Los hilos disponibles se obtienen con <code>Runtime.getRuntime().availableProcessors()</code>, que devuelve <b>16</b>: un Ryzen 7 5800HS con 8 núcleos y 16 hilos. A cada hilo se le asigna una franja: el hilo 0 hace las filas 0–523, el hilo 1 las 524–1047, y así hasta el hilo 15.</p>
+<pre>t[k] = new Thread(() -&gt; sobel(y0, y1));   // el hilo k procesa su franja
+t[k].start();</pre>
+
+<h2>3. Aglomeración</h2>
+<p>En vez de 120 millones de tareas pequeñas se hacen 16 bloques grandes de filas seguidas. Todos los hilos leen la misma imagen en grises, que nadie modifica, y cada uno escribe solo en sus filas del arreglo de salida. Así no hacen falta candados. Para unir el resultado basta con <code>join()</code>: cuando terminan los 16 hilos, la imagen ya está completa en un solo arreglo.</p>
+
+<h2>4. Mapeo</h2>
+<p>Cada hilo de Java es un hilo del sistema, y Windows lo coloca en uno de los 16 procesadores lógicos. Tiempos del filtro (mediana de 7 ejecuciones):</p>
+<div class="scroll">
+<table>
+  <tr><th>Hilos</th><th>Tiempo</th><th>Aceleración</th></tr>
+  <tr><td>1</td><td>764 ms</td><td>1,0×</td></tr>
+  <tr><td>2</td><td>528 ms</td><td>1,4×</td></tr>
+  <tr><td>4</td><td>302 ms</td><td>2,5×</td></tr>
+  <tr><td>8</td><td>164 ms</td><td>4,7×</td></tr>
+  <tr><td><b>16</b></td><td><b>96 ms</b></td><td><b>8,0×</b></td></tr></table>
+</div>
+
+<h2>5. Ejecución</h2>
+<p>El código usa el patrón Modelo-Vista-Controlador:</p>
+<ul>
+  <li><code>modelo/ModeloSobel.java</code>: carga la imagen, aplica el filtro con hilos y guarda el resultado.</li>
+  <li><code>vista/VistaConsola.java</code>: muestra los datos y los tiempos en consola.</li>
+  <li><code>controlador/ControladorSobel.java</code>: obtiene los hilos disponibles y coordina el modelo y la vista.</li>
+  <li><code>Main.java</code>: arranca el programa.</li>
+</ul>
+<pre>javac Main.java
+java -Xmx6g Main</pre>
+<p>Las imágenes generadas con 16 hilos y con 1 hilo son idénticas byte a byte.</p>
+
+<h2>Conclusión</h2>
+<p>Con 16 hilos el filtro es <b>8 veces más rápido</b>. No llega a 16× porque solo hay 8 núcleos físicos y todos comparten la memoria.</p>
+</main>
